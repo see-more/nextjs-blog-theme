@@ -1,0 +1,125 @@
+---
+title: Nio与Netty
+description: "初步学习了nio与netty的区别，并且简单实现了一个netty的客户端与服务端通信"
+date: 2022/1/21
+---
+
+# NIO服务端
+
+```java
+package com.nio;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.Set;
+
+public class SelectorCreateDemo {
+    public static void main(String[] args) throws IOException {
+        ServerSocketChannel open = ServerSocketChannel.open();
+        open.bind(new InetSocketAddress(9999));
+        open.configureBlocking(false);
+        Selector selector = Selector.open();
+        open.register(selector, SelectionKey.OP_ACCEPT);
+        while (true){
+            int select = selector.select(2000);
+            if (select==0){
+                System.out.println("没有事件发生");
+                continue;
+            }
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+            Iterator<SelectionKey> iterator = selectionKeys.iterator();
+            while (iterator.hasNext()){
+                SelectionKey next = iterator.next();
+                if (next.isAcceptable()){
+                    SocketChannel accept = open.accept();
+                    System.out.println("有客户端连接....");
+                    accept.configureBlocking(false);
+                    accept.register(selector,SelectionKey.OP_READ);
+                }
+                if (next.isReadable()){
+                    SocketChannel socketChannel = (SocketChannel) next.channel();
+                    ByteBuffer allocate = ByteBuffer.allocate(1024);
+                    int read = socketChannel.read(allocate);
+                    if (read>0){
+                        System.out.println(new String(allocate.array(),0,read, StandardCharsets.UTF_8));
+                        socketChannel.read(ByteBuffer.wrap("回复消息".getBytes(StandardCharsets.UTF_8)));
+                    }
+                }
+                iterator.remove();
+            }
+        }
+    }
+}
+```
+
+## 原生NIO存在的问题
+
+1、NIO的类库和Api繁杂。
+
+2、开发工作量和难度非常大 例如:半包读写、缓存失败、网络拥堵、断连重连、网络闪断等问题。
+
+3、JDK中NIO的bug臭名昭著的Epoll Bug，会导致selectro空轮询最终导致CPU拉满，直到1.7该问题仍没有被根本解决。
+
+## 解决方案 Ｎｅｔｔｙ
+
+Ｎｅｔｔｙ提供了异步高性能网络框架，用以快速开发高性能的网络IO程序
+
+Netty强大之处：零拷贝，可拓展的网络事件。支持TCP、UDP、HTTP、WebSocket等协议；提供安全传输、、压缩、大文件传输、编解码支持等等。
+
+## 核心API
+
+**ChannelHandler接口**
+
+定义了许多事件处理的方法、重写这些方法去实现具体的事务.
+
+**ChannelPipeline接口**
+
+一个Handdler的集合，可以理解为一个责任链，负责拦截inbound和outbound的事件和操作
+
+**ChannelOption**
+
+- ChannelOption.SO_BACKLOG
+
+  指定了不能处理请求暂时放在多长的队列里面
+
+- ChannelOption.SO_KEEPALIVE
+
+  探测连接的活动时间
+
+**ChannelFuture**
+
+- Channel channel()
+
+  返回当前正在操作的的IO通道
+
+- ChannelFuture sync()
+
+  等待异步操作完成之后改成同步的
+
+**EventLoopGroup与EvnetLoop**
+
+可以理解为线程池与线程
+
+Group里面有多个EventLoop而每一个EventLoop维护着一个Selector实例
+
+EvnetLoopGroup提供next几口，可以拿到EventLoop
+
+通常服务端有一个ServerSocketChannel对应一个Selector和一个EventLoop线程。
+
+BoosEventGroup负责将客户端的连接并将SocketChannel交给WorkerEvenetLoopGroup来进行IO操作
+
+**ServerBootstrap与Bootstrap**
+
+一个是服务端的，一个是客户端的
+
+**Unpooled**
+
+一个用来操作缓冲区的工具类
+
+# 构建Netty服务端与客户端
+
+示例代码：https://gitee.com/jhonwithmark/piece-of-java
